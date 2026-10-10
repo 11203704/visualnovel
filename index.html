@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>校園不可思議冒險記 - 文字冒險互動遊戲</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+    
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      user-select: none;
+    }
+
+    /* 畫面震動特效 */
+    .shake {
+      animation: shake-anim 0.5s cubic-bezier(.36,.07,.19,.97) both;
+    }
+    @keyframes shake-anim {
+      10%, 90% { transform: translate3d(-4px, 2px, 0); }
+      20%, 80% { transform: translate3d(6px, -4px, 0); }
+      30%, 50%, 70% { transform: translate3d(-8px, 6px, 0); }
+      40%, 60% { transform: translate3d(8px, -6px, 0); }
+    }
+
+    /* 畫面閃紅特效 */
+    .flash-red-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background-color: rgba(220, 38, 38, 0.7);
+      pointer-events: none;
+      opacity: 0;
+      z-index: 50;
+      transition: opacity 0.1s ease-in-out;
+    }
+    .flash-red-overlay.active {
+      opacity: 1;
+    }
+
+    /* 場景漸變黑屏轉場 */
+    .fade-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background-color: #000;
+      pointer-events: none;
+      opacity: 0;
+      z-index: 40;
+      transition: opacity 0.3s ease;
+    }
+    .fade-overlay.black {
+      opacity: 1;
+    }
+
+    /* 打字機游標與動畫 */
+    .typewriter-cursor::after {
+      content: '▋';
+      display: inline-block;
+      margin-left: 2px;
+      color: #38bdf8;
+      animation: blink 0.8s infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* 美化滾動條 */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1e293b;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #475569;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between items-center p-2 sm:p-4 bg-slate-950 text-slate-100 overflow-x-hidden">
+
+  <!-- 閃紅視覺特效層 -->
+  <div id="flashOverlay" class="flash-red-overlay"></div>
+
+  <!-- 頂部控制列 -->
+  <header class="w-full max-w-4xl bg-slate-900/90 border border-slate-800 rounded-xl p-3 mb-3 backdrop-blur shadow-lg flex flex-wrap justify-between items-center gap-2 z-10">
+    <div class="flex items-center space-x-2">
+      <span class="text-xl">🏫</span>
+      <h1 class="font-bold text-base sm:text-lg text-sky-400 tracking-wide">校園不可思議冒險記</h1>
+    </div>
+
+    <!-- 選單與功能按鈕區 -->
+    <div class="flex items-center flex-wrap gap-2 text-xs sm:text-sm">
+      <button id="btnEndings" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-lg border border-slate-700 flex items-center space-x-1 transition">
+        <span>🏆 結局圖鑑</span>
+        <span id="endingBadge" class="bg-amber-500/20 text-amber-300 text-xs px-1.5 py-0.5 rounded-full font-mono">0/5</span>
+      </button>
+
+      <button id="btnLog" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 flex items-center space-x-1 transition">
+        <span>📜 對話Log</span>
+      </button>
+
+      <select id="speedSelect" class="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500">
+        <option value="50">速度: 慢</option>
+        <option value="25" selected>速度: 中</option>
+        <option value="10">速度: 快</option>
+        <option value="0">速度: 瞬間</option>
+      </select>
+
+      <button id="btnSkip" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 rounded-lg border border-slate-700 transition">
+        ⏩ 快進
+      </button>
+
+      <button id="btnAudio" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-lg border border-slate-700 transition">
+        🔊 音效: 開
+      </button>
+
+      <button id="btnRestart" class="px-2.5 py-1.5 bg-rose-950/80 hover:bg-rose-900 text-rose-300 rounded-lg border border-rose-800 transition">
+        🔄 重來
+      </button>
+    </div>
+  </header>
+
+  <!-- 主遊戲視窗 -->
+  <main id="gameContainer" class="w-full max-w-4xl flex-1 flex flex-col bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden relative">
+    
+    <!-- 轉場黑屏遮罩 -->
+    <div id="fadeOverlay" class="fade-overlay"></div>
+
+    <!-- 1. 上方 SVG 場景與角色渲染區 (16:9 比例適應) -->
+    <div id="sceneViewport" class="relative w-full h-64 sm:h-80 md:h-96 bg-slate-950 overflow-hidden flex items-end justify-center select-none">
+      
+      <!-- 動態背景 (CSS/SVG 繪製) -->
+      <div id="sceneBackground" class="absolute inset-0 w-full h-full transition-all duration-500">
+        <!-- SVG 動態場景由 JS 自動插入 -->
+      </div>
+
+      <!-- 光影與氛圍遮罩 -->
+      <div id="ambientOverlay" class="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-black/20 pointer-events-none"></div>
+
+      <!-- 角色 SVG 立繪層 -->
+      <div id="characterLayer" class="relative z-10 w-48 sm:w-64 md:w-72 h-full flex items-end justify-center transition-transform duration-300">
+        <!-- SVG 角色立繪由 JS 動態切換 -->
+      </div>
+    </div>
+
+    <!-- 2. 中間對話與劇情敘述區 -->
+    <div id="dialogueContainer" class="relative p-4 sm:p-6 bg-slate-900/95 border-t border-slate-800 flex-1 flex flex-col justify-between min-h-[160px] cursor-pointer">
+      <div>
+        <!-- 發話者名稱標籤 -->
+        <div id="speakerTag" class="inline-block px-3 py-1 mb-2 text-xs sm:text-sm font-bold rounded-lg bg-sky-950 text-sky-300 border border-sky-800/60 shadow">
+          敘述
+        </div>
+        <!-- 劇情文本 (打字機渲染) -->
+        <p id="dialogueText" class="text-slate-100 text-sm sm:text-base leading-relaxed tracking-wide min-h-[3rem] whitespace-pre-line">
+          點擊下方選項開始探索...
+        </p>
+      </div>
+
+      <!-- 點擊繼續提示標籤 -->
+      <div id="nextIndicator" class="self-end text-xs text-sky-400/80 animate-pulse hidden">
+        ▼ 點擊畫面上方繼續...
+      </div>
+    </div>
+
+    <!-- 3. 下方背包與玩家選項區 -->
+    <div class="bg-slate-950 p-3 sm:p-4 border-t border-slate-800/80">
+      
+      <!-- 背包欄位 -->
+      <div class="flex items-center justify-between mb-2 px-1 text-xs text-slate-400">
+        <span class="font-medium flex items-center gap-1">🎒 當前物品欄:</span>
+        <div id="inventoryList" class="flex flex-wrap gap-1.5">
+          <span class="text-slate-600 italic">空無一物</span>
+        </div>
+      </div>
+
+      <!-- 抉擇選項容器 -->
+      <div id="optionsContainer" class="grid grid-cols-1 gap-2">
+        <!-- 動態生成的選項按鈕 -->
+      </div>
+    </div>
+
+  </main>
+
+  <!-- 彈出視窗 1: 結局圖鑑 Modal -->
+  <div id="modalEndings" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-4 border-b border-slate-800 flex justify-between items-center">
+        <h3 class="text-lg font-bold text-amber-400 flex items-center gap-2">🏆 結局收藏圖鑑</h3>
+        <button id="btnCloseEndings" class="text-slate-400 hover:text-white text-xl px-2">&times;</button>
+      </div>
+      <div id="endingsList" class="p-4 overflow-y-auto space-y-3 flex-1 text-sm">
+        <!-- 由 JS 動態生成 5 個結局卡片 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 彈出視窗 2: 對話歷史 Log Modal -->
+  <div id="modalLog" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-4 border-b border-slate-800 flex justify-between items-center">
+        <h3 class="text-lg font-bold text-sky-400 flex items-center gap-2">📜 歷史對話紀錄</h3>
+        <button id="btnCloseLog" class="text-slate-400 hover:text-white text-xl px-2">&times;</button>
+      </div>
+      <div id="logHistoryList" class="p-4 overflow-y-auto space-y-3 flex-1 text-xs sm:text-sm font-mono">
+        <!-- 由 JS 動態記錄歷史列表 -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* =========================================================================
+     * 1. 遊戲劇本與全域狀態 (SCRIPT DATA & GAME STATE)
+     * ========================================================================= */
+    
+    // 結局定義 (共 5 個)
+    const ENDINGS = {
+      'BE_01': { id: 'BE_01', name: '壞結局 1：詛咒的箱子', type: 'BAD', desc: '不聽勸告蠻力拆開箱子，引發了古老符咒的反噬。' },
+      'BE_02': { id: 'BE_02', name: '壞結局 2：深夜消失的學生', type: 'BAD', desc: '在漆黑的走廊上冒然接近未知的怪影，成為了新的怪談。' },
+      'NE_01': { id: 'NE_01', name: '普通結局 1：平凡的回家路上', type: 'NE', desc: '選擇 ignore 所有可疑痕跡直接回家，平淡無奇地度過了一天。' },
+      'NE_02': { id: 'NE_02', name: '普通結局 2：未解的舊館怪談', type: 'NE', desc: '走進了舊圖書館，雖然全身而退，但未能解開背後的真正秘密。' },
+      'TE_01': { id: 'TE_01', name: '真結局：校園怪談的真相', type: 'TRUE', desc: '手持驅魔御守與舊校刊，成功解開神秘少女「葵」的心結！' }
+    };
+
+    // 遊戲劇本資料樹
+    const SCRIPT = {
+      'start': {
+        scene: 'classroom_sunset',
+        speaker: '旁白',
+        character: 'none',
+        text: '放學後的黃昏，橘紅色的夕陽灑進三樓教室。\n同學們都已經回家了，你整理完書包正準備離開，卻突然聽到後方傳來陣陣異響...',
+        options: [
+          { text: '🔍 檢查傳出聲音的課桌抽屜', target: 'desk_investigate' },
+          { text: '🚪 不管它，直接背起書包回家', target: 'go_home_early' }
+        ]
+      },
+      'go_home_early': {
+        scene: 'classroom_sunset',
+        speaker: '旁白',
+        character: 'none',
+        text: '多一事不如少一事。你搖搖頭，加快腳步離開了學校。\n今晚過得很平靜，但你永遠不會知道那天放學後的教室裡究竟隱藏著什麼...',
+        ending: 'NE_01'
+      },
+      'desk_investigate': {
+        scene: 'classroom_sunset',
+        speaker: '旁白',
+        character: 'none',
+        text: '你走近靠窗的最後一排課桌，從抽屜深處拉出了一個貼滿老舊符咒的木盒。\n盒子上有一把生鏽的銅鎖，同時旁邊似乎還掉落了一張紙條。',
+        options: [
+          { text: '💥 不管三七二十一，用力試圖強行撬開木盒', target: 'pry_box_open' },
+          { text: '🔑 仔細搜尋周圍，看看有沒有對應的鑰匙', target: 'find_key' }
+        ]
+      },
+      'pry_box_open': {
+        scene: 'classroom_sunset',
+        speaker: '旁白',
+        character: 'none',
+        text: '你伸手用力撕開符咒，準備蠻力拉開鎖頭！\n瞬間，一股冰冷刺骨的黑氣從盒縫中噴湧而出，緊接著耳邊響起淒厲的尖叫聲！',
+        flashRed: true,
+        shake: true,
+        sound: 'bad',
+        ending: 'BE_01'
+      },
+      'find_key': {
+        scene: 'classroom_sunset',
+        speaker: '旁白',
+        character: 'none',
+        text: '你在講台底下的縫隙裡找到了一支古舊的銅鑰匙！\n【獲得物品：🗝️ 舊鑰匙】\n就在此時，走廊外突然傳來輕微的腳步聲與少女的喃喃細語...',
+        getItem: { id: 'old_key', name: '🗝️ 舊鑰匙' },
+        options: [
+          { text: '🏃 走出教室，前往夜晚的走廊一探究竟', target: 'corridor_night' }
+        ]
+      },
+      'corridor_night': {
+        scene: 'corridor_night',
+        speaker: '旁白',
+        character: 'shadow',
+        text: '走廊上寂靜無聲，天色已完全暗了下來。\n遠處的走廊盡頭，似乎站著一個幽幽的人影，發出淡藍色的螢光。',
+        options: [
+          { text: '🏫 使用舊鑰匙打開旁邊的「舊圖書館」大門', target: 'secret_library', requireItem: 'old_key' },
+          { text: '👻 勇敢地向走廊盡頭的人影走過去', target: 'approach_shadow' },
+          { text: '🏃 慌忙跑上頂樓屋頂避難', target: 'rooftop_night' }
+        ]
+      },
+      'approach_shadow': {
+        scene: 'corridor_night',
+        speaker: '怪異影子',
+        character: 'shadow',
+        text: '你一步步接近那道黑影...「尋找我...陪伴我...」\n黑影瞬間化為巨浪將你吞噬！視野陷入一片漆黑！',
+        flashRed: true,
+        shake: true,
+        sound: 'bad',
+        ending: 'BE_02'
+      },
+      'secret_library': {
+        scene: 'library',
+        speaker: '旁白',
+        character: 'cat',
+        text: '你用舊鑰匙轉動門鎖，嘎吱一聲推開了沉重的舊圖書館大門。\n一隻發光的白尾黑貓優雅地坐在書桌上，似乎在引導你看向桌上的古老校刊。',
+        options: [
+          { text: '📖 翻閱桌上的《舊校刊》記錄', target: 'read_gazette' },
+          { text: '🏃 不管書籍，直接轉身前往屋頂', target: 'rooftop_night' }
+        ]
+      },
+      'read_gazette': {
+        scene: 'library',
+        speaker: '旁白',
+        character: 'cat',
+        text: '校刊上記述著十年前的舊事：「轉學生葵因遺失了珍貴的御守而深感自責...」\n你在校刊書頁中發現了一枚精緻的御守！\n【獲得物品：📜 舊校刊】與【獲得物品：🔮 驅魔御守】',
+        getItem: { id: 'exorcism_charm', name: '🔮 驅魔御守' },
+        options: [
+          { text: '🌕 帶著御守，前往月光下的學校屋頂', target: 'rooftop_night' }
+        ]
+      },
+      'rooftop_night': {
+        scene: 'rooftop',
+        speaker: '謎之少女 葵',
+        character: 'aoi_sad',
+        text: '推開屋頂鐵門，微風迎面吹來。\n一位穿著舊款制服的少女站在圍欄邊，轉過身用有些悲傷的眼神看著你。\n「你...也是來嘲笑我的嗎？」',
+        options: [
+          { text: '🔮 出示「驅魔御守」並溫柔地將它遞給她', target: 'true_ending_branch', requireItem: 'exorcism_charm' },
+          { text: '💬 試圖用語言開導她並勸她離開', target: 'normal_ending_2' }
+        ]
+      },
+      'normal_ending_2': {
+        scene: 'rooftop',
+        speaker: '葵',
+        character: 'aoi_normal',
+        text: '葵看著你，輕輕露出一絲微笑了。「謝謝你陪我聊天，但我得繼續去尋找我的東西了...」\n說完，她的身姿漸漸化作點點螢光消失在夜空中。雖然危機解除了，但你感覺似乎缺了點什麼...',
+        ending: 'NE_02'
+      },
+      'true_ending_branch': {
+        scene: 'rooftop',
+        speaker: '葵',
+        character: 'aoi_happy',
+        text: '看見你手中的御守，葵的雙眼頓時充滿了不敢置信的光芒！\n「這是我一直在找的...原來它一直被好心人保存著！」\n她接過御守，臉上綻放出無比燦爛幸福的笑容，周圍的陰霾與怪談氣息頃刻間消散無蹤！',
+        sound: 'victory',
+        ending: 'TE_01'
+      }
+    };
+
+    // 遊戲目前即時狀態
+    let gameState = {
+      currentSceneId: 'start',
+      inventory: [],
+      history: [],
+      unlockedEndings: [],
+      textSpeed: 25,
+      soundMuted: false,
+      isTyping: false,
+      typingTimer: null,
+      fullTextToType: ''
+    };
+
+    /* =========================================================================
+     * 2. Web Audio API 音效與音樂合成器 (SOUND ENGINE)
+     * ========================================================================= */
+    class SoundEngine {
+      constructor() {
+        this.ctx = null;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      playTypeSound() {
+        if (gameState.soundMuted || !this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(600 + Math.random() * 200, this.ctx.currentTime);
+          gain.gain.setValueAtTime(0.02, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.04);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.04);
+        } catch (e) {}
+      }
+
+      playClickSound() {
+        if (gameState.soundMuted || !this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + 0.08);
+          gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.001, this.ctx.currentTime + 0.08);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.08);
+        } catch (e) {}
+      }
+
+      playItemSound() {
+        if (gameState.soundMuted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+            gain.gain.setValueAtTime(0.1, now + idx * 0.08);
+            gain.gain.linearRampToValueAtTime(0.001, now + idx * 0.08 + 0.2);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now + idx * 0.08);
+            osc.stop(now + idx * 0.08 + 0.2);
+          });
+        } catch (e) {}
+      }
+
+      playBadSound() {
+        if (gameState.soundMuted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(150, now);
+          osc.frequency.linearRampToValueAtTime(40, now + 0.6);
+          gain.gain.setValueAtTime(0.25, now);
+          gain.gain.linearRampToValueAtTime(0.001, now + 0.6);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.6);
+        } catch (e) {}
+      }
+
+      playVictorySound() {
+        if (gameState.soundMuted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          [440, 554.37, 659.25, 880].forEach((freq, idx) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + idx * 0.12);
+            gain.gain.setValueAtTime(0.15, now + idx * 0.12);
+            gain.gain.linearRampToValueAtTime(0.001, now + idx * 0.12 + 0.4);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now + idx * 0.12);
+            osc.stop(now + idx * 0.12 + 0.4);
+          });
+        } catch (e) {}
+      }
+    }
+
+    const soundEngine = new SoundEngine();
+
+    /* =========================================================================
+     * 3. 純 SVG 動態繪製（背景與角色立繪） (SVG SCENE & CHARACTER RENDER)
+     * ========================================================================= */
+    
+    // 背景 SVG 渲染庫
+    const SCENE_SVGS = {
+      'classroom_sunset': `
+        <svg class="w-full h-full" viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="sunsetSky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#fdba74"/>
+              <stop offset="50%" stop-color="#ea580c"/>
+              <stop offset="100%" stop-color="#431407"/>
+            </linearGradient>
+          </defs>
+          <rect width="800" height="450" fill="url(#sunsetSky)" />
+          <!-- 窗戶結構 -->
+          <rect x="50" y="40" width="300" height="260" fill="none" stroke="#78350f" stroke-width="8"/>
+          <line x1="200" y1="40" x2="200" y2="300" stroke="#78350f" stroke-width="6"/>
+          <line x1="50" y1="170" x2="350" y2="170" stroke="#78350f" stroke-width="6"/>
+          <!-- 夕陽陽光透色 -->
+          <polygon points="50,300 350,300 600,450 0,450" fill="#f97316" opacity="0.25"/>
+          <!-- 地板與講台 -->
+          <rect x="0" y="320" width="800" height="130" fill="#292524"/>
+          <line x1="0" y1="360" x2="800" y2="360" stroke="#44403c" stroke-width="2"/>
+          <!-- 課桌椅輪廓 -->
+          <rect x="450" y="260" width="160" height="90" fill="#78350f" rx="4"/>
+          <rect x="470" y="350" width="12" height="60" fill="#451a03"/>
+          <rect x="580" y="350" width="12" height="60" fill="#451a03"/>
+        </svg>
+      `,
+      'corridor_night': `
+        <svg class="w-full h-full" viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="nightCorridor" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#020617"/>
+              <stop offset="100%" stop-color="#0f172a"/>
+            </linearGradient>
+          </defs>
+          <rect width="800" height="450" fill="url(#nightCorridor)" />
+          <!-- 透視走廊結構 -->
+          <polygon points="0,0 800,0 500,200 300,200" fill="#090d16" />
+          <polygon points="0,450 800,450 500,280 300,280" fill="#1e293b" />
+          <polygon points="0,0 300,200 300,280 0,450" fill="#020617" stroke="#1e293b" stroke-width="2"/>
+          <polygon points="800,0 500,200 500,280 800,450" fill="#020617" stroke="#1e293b" stroke-width="2"/>
+          <!-- 走廊盡頭微弱螢光 -->
+          <circle cx="400" cy="240" r="30" fill="#38bdf8" opacity="0.15" filter="blur(10px)"/>
+        </svg>
+      `,
+      'library': `
+        <svg class="w-full h-full" viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+          <rect width="800" height="450" fill="#1c1917" />
+          <!-- 書架陣列 -->
+          <rect x="40" y="40" width="200" height="320" fill="#292524" stroke="#44403c" stroke-width="4"/>
+          <rect x="560" y="40" width="200" height="320" fill="#292524" stroke="#44403c" stroke-width="4"/>
+          <!-- 書本填充色塊 -->
+          <rect x="60" y="80" width="160" height="30" fill="#b91c1c"/>
+          <rect x="60" y="150" width="160" height="30" fill="#1d4ed8"/>
+          <rect x="580" y="100" width="160" height="30" fill="#047857"/>
+          <!-- 書桌與燈光 -->
+          <polygon points="200,350 600,350 680,450 120,450" fill="#44403c"/>
+          <circle cx="400" cy="300" r="100" fill="#fde047" opacity="0.08"/>
+        </svg>
+      `,
+      'rooftop': `
+        <svg class="w-full h-full" viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+          <rect width="800" height="450" fill="#030712"/>
+          <!-- 滿月 -->
+          <circle cx="650" cy="100" r="50" fill="#fef08a" opacity="0.9"/>
+          <circle cx="650" cy="100" r="70" fill="#fef08a" opacity="0.15"/>
+          <!-- 星空點綴 -->
+          <circle cx="100" cy="60" r="2" fill="#fff"/>
+          <circle cx="250" cy="120" r="1.5" fill="#fff"/>
+          <circle cx="400" cy="50" r="2" fill="#fff"/>
+          <!-- 屋頂圍欄鐵絲網 -->
+          <rect x="0" y="240" width="800" height="100" fill="none" stroke="#374151" stroke-width="3"/>
+          <line x1="0" y1="270" x2="800" y2="270" stroke="#374151" stroke-width="1.5"/>
+          <line x1="0" y1="300" x2="800" y2="300" stroke="#374151" stroke-width="1.5"/>
+          <rect x="0" y="340" width="800" height="110" fill="#1f2937"/>
+        </svg>
+      `
+    };
+
+    // 角色 SVG 立繪庫
+    const CHARACTER_SVGS = {
+      'none': '',
+      'shadow': `
+        <svg class="w-full h-auto max-h-[85%]" viewBox="0 0 200 300" xmlns="http://www.w3.org/2000/svg">
+          <path d="M100 40 C60 40 50 90 50 140 C50 200 30 280 100 280 C170 280 150 200 150 140 C150 90 140 40 100 40 Z" fill="#0f172a" opacity="0.85" filter="drop-shadow(0 0 12px #38bdf8)"/>
+          <circle cx="80" cy="100" r="6" fill="#38bdf8"/>
+          <circle cx="120" cy="100" r="6" fill="#38bdf8"/>
+        </svg>
+      `,
+      'cat': `
+        <svg class="w-full h-auto max-h-[70%]" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+          <!-- 貓咪耳朵與身體 -->
+          <polygon points="50,60 80,10 90,80" fill="#1e293b"/>
+          <polygon points="150,60 120,10 110,80" fill="#1e293b"/>
+          <ellipse cx="100" cy="120" rx="50" ry="45" fill="#0f172a"/>
+          <!-- 貓眼發光 -->
+          <ellipse cx="80" cy="115" rx="8" ry="12" fill="#fde047"/>
+          <ellipse cx="120" cy="115" rx="8" ry="12" fill="#fde047"/>
+          <line x1="80" y1="110" x2="80" y2="120" stroke="#000" stroke-width="3"/>
+          <line x1="120" y1="110" x2="120" y2="120" stroke="#000" stroke-width="3"/>
+        </svg>
+      `,
+      'aoi_sad': `
+        <svg class="w-full h-auto max-h-[90%]" viewBox="0 0 200 320" xmlns="http://www.w3.org/2000/svg">
+          <!-- 髮型 -->
+          <path d="M50 100 C50 30 150 30 150 100 C150 160 160 220 160 250 L40 250 C40 220 50 160 50 100 Z" fill="#312e81"/>
+          <!-- 臉型 -->
+          <ellipse cx="100" cy="110" rx="35" ry="40" fill="#ffedd5"/>
+          <!-- 瀏海 -->
+          <path d="M65 80 Q100 100 135 80 Q100 95 65 80 Z" fill="#312e81"/>
+          <!-- 悲傷眼睛 -->
+          <ellipse cx="85" cy="110" rx="5" ry="7" fill="#1e1b4b"/>
+          <ellipse cx="115" cy="110" rx="5" ry="7" fill="#1e1b4b"/>
+          <path d="M80 100 Q85 95 90 102" stroke="#312e81" stroke-width="2" fill="none"/>
+          <path d="M120 100 Q115 95 110 102" stroke="#312e81" stroke-width="2" fill="none"/>
+          <path d="M95 130 Q100 125 105 130" stroke="#e11d48" stroke-width="2" fill="none"/>
+          <!-- 水手服校服 -->
+          <path d="M60 150 L140 150 L150 280 L50 280 Z" fill="#1e1b4b"/>
+          <polygon points="80,150 100,180 120,150" fill="#e11d48"/>
+        </svg>
+      `,
+      'aoi_normal': `
+        <svg class="w-full h-auto max-h-[90%]" viewBox="0 0 200 320" xmlns="http://www.w3.org/2000/svg">
+          <path d="M50 100 C50 30 150 30 150 100 C150 160 160 220 160 250 L40 250 C40 220 50 160 50 100 Z" fill="#312e81"/>
+          <ellipse cx="100" cy="110" rx="35" ry="40" fill="#ffedd5"/>
+          <path d="M65 80 Q100 100 135 80 Q100 95 65 80 Z" fill="#312e81"/>
+          <circle cx="85" cy="110" r="5" fill="#1e1b4b"/>
+          <circle cx="115" cy="110" r="5" fill="#1e1b4b"/>
+          <line x1="92" y1="130" x2="108" y2="130" stroke="#e11d48" stroke-width="2"/>
+          <path d="M60 150 L140 150 L150 280 L50 280 Z" fill="#1e1b4b"/>
+          <polygon points="80,150 100,180 120,150" fill="#e11d48"/>
+        </svg>
+      `,
+      'aoi_happy': `
+        <svg class="w-full h-auto max-h-[90%]" viewBox="0 0 200 320" xmlns="http://www.w3.org/2000/svg">
+          <path d="M50 100 C50 30 150 30 150 100 C150 160 160 220 160 250 L40 250 C40 220 50 160 50 100 Z" fill="#312e81"/>
+          <ellipse cx="100" cy="110" rx="35" ry="40" fill="#ffedd5"/>
+          <path d="M65 80 Q100 100 135 80 Q100 95 65 80 Z" fill="#312e81"/>
+          <!-- 笑眼 (彎月) -->
+          <path d="M80 110 Q85 102 90 110" stroke="#1e1b4b" stroke-width="3" fill="none"/>
+          <path d="M110 110 Q115 102 120 110" stroke="#1e1b4b" stroke-width="3" fill="none"/>
+          <!-- 歡樂微笑 -->
+          <path d="M90 125 Q100 138 110 125" stroke="#e11d48" stroke-width="3" fill="#e11d48"/>
+          <!-- 臉頰紅暈 -->
+          <ellipse cx="75" cy="118" rx="6" ry="3" fill="#f43f5e" opacity="0.6"/>
+          <ellipse cx="125" cy="118" rx="6" ry="3" fill="#f43f5e" opacity="0.6"/>
+          <path d="M60 150 L140 150 L150 280 L50 280 Z" fill="#1e1b4b"/>
+          <polygon points="80,150 100,180 120,150" fill="#e11d48"/>
+        </svg>
+      `
+    };
+
+    /* =========================================================================
+     * 4. UI 渲染與遊戲邏輯控制 (UI & LOGIC CONTROLLER)
+     * ========================================================================= */
+
+    // 初始化與 DOM 載入
+    document.addEventListener('DOMContentLoaded', () => {
+      loadSaveData();
+      bindEvents();
+      renderScene(gameState.currentSceneId);
+      updateEndingBadge();
+    });
+
+    // 存檔/讀檔邏輯 (LocalStorage)
+    function loadSaveData() {
+      const saved = localStorage.getItem('CAMPUS_MYSTERY_SAVE_V1');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          gameState.unlockedEndings = parsed.unlockedEndings || [];
+          if (parsed.currentSceneId && SCRIPT[parsed.currentSceneId]) {
+            gameState.currentSceneId = parsed.currentSceneId;
+            gameState.inventory = parsed.inventory || [];
+            gameState.history = parsed.history || [];
+          }
+        } catch (e) {}
+      }
+    }
+
+    function saveGameData() {
+      localStorage.setItem('CAMPUS_MYSTERY_SAVE_V1', JSON.stringify({
+        currentSceneId: gameState.currentSceneId,
+        inventory: gameState.inventory,
+        history: gameState.history,
+        unlockedEndings: gameState.unlockedEndings
+      }));
+    }
+
+    // 綁定所有按鈕與使用者互動事件
+    function bindEvents() {
+      // 點擊對話框可快速完成打字或推進
+      document.getElementById('dialogueContainer').addEventListener('click', () => {
+        soundEngine.init();
+        if (gameState.isTyping) {
+          finishTypingInstantly();
+        }
+      });
+
+      // 頂部控制按鈕
+      document.getElementById('btnEndings').addEventListener('click', openEndingsModal);
+      document.getElementById('btnCloseEndings').addEventListener('click', () => {
+        document.getElementById('modalEndings').classList.add('hidden');
+      });
+
+      document.getElementById('btnLog').addEventListener('click', openLogModal);
+      document.getElementById('btnCloseLog').addEventListener('click', () => {
+        document.getElementById('modalLog').classList.add('hidden');
+      });
+
+      document.getElementById('speedSelect').addEventListener('change', (e) => {
+        gameState.textSpeed = parseInt(e.target.value);
+      });
+
+      document.getElementById('btnSkip').addEventListener('click', () => {
+        soundEngine.init();
+        finishTypingInstantly();
+      });
+
+      document.getElementById('btnAudio').addEventListener('click', () => {
+        gameState.soundMuted = !gameState.soundMuted;
+        document.getElementById('btnAudio').innerText = gameState.soundMuted ? '🔇 音效: 關' : '🔊 音效: 開';
+        if (!gameState.soundMuted) soundEngine.init();
+      });
+
+      document.getElementById('btnRestart').addEventListener('click', () => {
+        if (confirm('確定要重新開始冒險嗎？（已解鎖的圖鑑會保留）')) {
+          restartGame();
+        }
+      });
+    }
+
+    // 重新開始遊戲
+    function restartGame() {
+      gameState.currentSceneId = 'start';
+      gameState.inventory = [];
+      gameState.history = [];
+      saveGameData();
+      renderScene('start');
+    }
+
+    // 核心：渲染劇情場景
+    function renderScene(sceneId) {
+      const node = SCRIPT[sceneId];
+      if (!node) return;
+
+      gameState.currentSceneId = sceneId;
+
+      // 檢查道具獲得
+      if (node.getItem) {
+        const hasItem = gameState.inventory.some(i => i.id === node.getItem.id);
+        if (!hasItem) {
+          gameState.inventory.push(node.getItem);
+          soundEngine.playItemSound();
+        }
+      }
+
+      // 處理聲音與視覺特效
+      if (node.flashRed) triggerFlashRed();
+      if (node.shake) triggerShake();
+      if (node.sound === 'bad') soundEngine.playBadSound();
+      if (node.sound === 'victory') soundEngine.playVictorySound();
+
+      // 記錄對話 History
+      gameState.history.push({
+        speaker: node.speaker,
+        text: node.text
+      });
+
+      // 渲染 SVG 背景與角色
+      document.getElementById('sceneBackground').innerHTML = SCENE_SVGS[node.scene] || '';
+      document.getElementById('characterLayer').innerHTML = CHARACTER_SVGS[node.character] || '';
+
+      // 渲染發話者名稱
+      document.getElementById('speakerTag').innerText = node.speaker || '敘述';
+
+      // 渲染背包物品欄
+      renderInventoryUI();
+
+      // 開始打字機渲染文字
+      startTypewriter(node.text, () => {
+        renderOptionsUI(node);
+      });
+
+      // 保存進度
+      saveGameData();
+    }
+
+    // 渲染背包物品
+    function renderInventoryUI() {
+      const container = document.getElementById('inventoryList');
+      if (gameState.inventory.length === 0) {
+        container.innerHTML = '<span class="text-slate-600 italic">空無一物</span>';
+        return;
+      }
+      container.innerHTML = gameState.inventory.map(item => `
+        <span class="px-2 py-0.5 bg-slate-800 text-sky-300 border border-sky-800/80 rounded-md text-xs flex items-center gap-1 shadow-sm">
+          ${item.name}
+        </span>
+      `).join('');
+    }
+
+    // 打字機特效實現
+    function startTypewriter(text, onComplete) {
+      clearInterval(gameState.typingTimer);
+      gameState.isTyping = true;
+      gameState.fullTextToType = text;
+
+      const textElem = document.getElementById('dialogueText');
+      textElem.innerText = '';
+      textElem.classList.add('typewriter-cursor');
+
+      let charIndex = 0;
+      const speed = gameState.textSpeed;
+
+      if (speed === 0) {
+        // 瞬間顯示
+        textElem.innerText = text;
+        textElem.classList.remove('typewriter-cursor');
+        gameState.isTyping = false;
+        if (onComplete) onComplete();
+        return;
+      }
+
+      gameState.typingTimer = setInterval(() => {
+        if (charIndex < text.length) {
+          textElem.innerText += text.charAt(charIndex);
+          if (charIndex % 2 === 0) soundEngine.playTypeSound();
+          charIndex++;
+        } else {
+          clearInterval(gameState.typingTimer);
+          textElem.classList.remove('typewriter-cursor');
+          gameState.isTyping = false;
+          if (onComplete) onComplete();
+        }
+      }, speed);
+    }
+
+    // 瞬間完成打字
+    function finishTypingInstantly() {
+      if (!gameState.isTyping) return;
+      clearInterval(gameState.typingTimer);
+      const textElem = document.getElementById('dialogueText');
+      textElem.innerText = gameState.fullTextToType;
+      textElem.classList.remove('typewriter-cursor');
+      gameState.isTyping = false;
+
+      const node = SCRIPT[gameState.currentSceneId];
+      if (node) renderOptionsUI(node);
+    }
+
+    // 渲染抉擇選項 UI
+    function renderOptionsUI(node) {
+      const container = document.getElementById('optionsContainer');
+      container.innerHTML = '';
+
+      // 若為結局節點
+      if (node.ending) {
+        handleEndingReached(node.ending);
+        return;
+      }
+
+      if (!node.options) return;
+
+      node.options.forEach(opt => {
+        const btn = document.createElement('button');
+        
+        // 檢查道具門檻
+        let isLocked = false;
+        if (opt.requireItem) {
+          const hasRequired = gameState.inventory.some(i => i.id === opt.requireItem);
+          if (!hasRequired) isLocked = true;
+        }
+
+        if (isLocked) {
+          btn.className = 'w-full text-left p-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-500 cursor-not-allowed flex justify-between items-center opacity-60';
+          btn.innerHTML = `<span>${opt.text}</span> <span class="text-xs text-amber-500/80 font-mono">🔒 需要特定道具</span>`;
+        } else {
+          btn.className = 'w-full text-left p-3 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 border border-slate-700 text-slate-100 font-medium transition duration-200 transform active:scale-[0.99] flex justify-between items-center shadow-md';
+          btn.innerHTML = `<span>${opt.text}</span> <span class="text-sky-400 font-bold">➔</span>`;
+          btn.addEventListener('click', () => {
+            soundEngine.playClickSound();
+            renderScene(opt.target);
+          });
+        }
+
+        container.appendChild(btn);
+      });
+    }
+
+    // 處理結局達成
+    function handleEndingReached(endingId) {
+      const ending = ENDINGS[endingId];
+      if (!ending) return;
+
+      // 解鎖結局記錄
+      if (!gameState.unlockedEndings.includes(endingId)) {
+        gameState.unlockedEndings.push(endingId);
+        saveGameData();
+        updateEndingBadge();
+      }
+
+      const container = document.getElementById('optionsContainer');
+      container.innerHTML = `
+        <div class="p-4 rounded-xl bg-slate-900 border ${ending.type === 'BAD' ? 'border-rose-800 text-rose-300' : 'border-amber-500/50 text-amber-300'} mb-2 text-center">
+          <div class="font-bold text-base mb-1">${ending.name}</div>
+          <div class="text-xs text-slate-300">${ending.desc}</div>
+        </div>
+        <button id="btnEndingRestart" class="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl shadow-lg transition">
+          🔄 重新展開冒險
+        </button>
+      `;
+
+      document.getElementById('btnEndingRestart').addEventListener('click', () => {
+        soundEngine.playClickSound();
+        restartGame();
+      });
+    }
+
+    // 更新頂部圖鑑徽章數量
+    function updateEndingBadge() {
+      const count = gameState.unlockedEndings.length;
+      document.getElementById('endingBadge').innerText = `${count}/5`;
+    }
+
+    // 畫面閃紅特效
+    function triggerFlashRed() {
+      const overlay = document.getElementById('flashOverlay');
+      overlay.classList.add('active');
+      setTimeout(() => overlay.classList.remove('active'), 400);
+    }
+
+    // 畫面震動特效
+    function triggerShake() {
+      const viewport = document.getElementById('gameContainer');
+      viewport.classList.add('shake');
+      setTimeout(() => viewport.classList.remove('shake'), 500);
+    }
+
+    // 開啟圖鑑 Modal
+    function openEndingsModal() {
+      const list = document.getElementById('endingsList');
+      list.innerHTML = Object.values(ENDINGS).map(e => {
+        const isUnlocked = gameState.unlockedEndings.includes(e.id);
+        return `
+          <div class="p-3 rounded-xl border ${isUnlocked ? 'bg-slate-800/80 border-amber-500/40' : 'bg-slate-950 border-slate-800 opacity-50'} flex justify-between items-center">
+            <div>
+              <div class="font-bold text-sm ${isUnlocked ? (e.type === 'BAD' ? 'text-rose-400' : 'text-amber-300') : 'text-slate-500'}">
+                ${isUnlocked ? e.name : '🔒 未解鎖結局'}
+              </div>
+              <div class="text-xs text-slate-400 mt-1">
+                ${isUnlocked ? e.desc : '探索不同的抉擇方向以觸發此結局...'}
+              </div>
+            </div>
+            <span class="text-xs font-mono px-2 py-1 rounded bg-slate-900 border border-slate-800">
+              ${isUnlocked ? '已解鎖' : '未解鎖'}
+            </span>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('modalEndings').classList.remove('hidden');
+    }
+
+    // 開啟對話歷史 Log Modal
+    function openLogModal() {
+      const list = document.getElementById('logHistoryList');
+      if (gameState.history.length === 0) {
+        list.innerHTML = '<p class="text-slate-500 italic">尚無對話記錄</p>';
+      } else {
+        list.innerHTML = gameState.history.map(h => `
+          <div class="p-2.5 rounded-lg bg-slate-800/60 border border-slate-800">
+            <span class="font-bold text-sky-400 text-xs">[${h.speaker}]</span>
+            <p class="text-slate-200 mt-0.5 leading-relaxed">${h.text}</p>
+          </div>
+        `).join('');
+      }
+
+      document.getElementById('modalLog').classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>
